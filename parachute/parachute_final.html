@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>Parachute Animation with Shadows</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <script src="../js/build/three.js"></script>
+    <script src="../js/examples/js/controls/OrbitControls.js"></script>
+    <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+    <!-- <script src="rodData.js"></script> -->
+    <script src="shellData.js"></script>
+    <!-- <script src="rodData_small.js"></script> -->
+    <!-- <script src="shellData_small.js"></script> -->
+     <script src="rodData.js"></script>
+    <!-- <script src="shellData_small.js"></script> -->
+
+    <script>
+        let camera, scene, renderer, controls;
+        let rodGroup, shellGroup;
+        let globalCounter = 0;
+        let nRodTimes, nShellTimes;
+        let capturer;
+        let capturing = true;
+        let offset = 30;
+
+        init();
+        animate();
+
+        function init() {
+            // Verify Data
+            if (!rodData || !rodData.nodePositions || !rodData.connectivity) {
+                console.error("rodData.js is not loaded or missing required properties.");
+                return;
+            }
+            if (!shellData || !shellData.nodes || !shellData.nTri) {
+                console.error("shellData.js is not loaded or missing required properties.");
+                return;
+            }
+
+            // Initialize Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xffffff);
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 3000);
+            camera.position.set(60, 60, -10); // Diagonal view
+            // camera.position.set(80, 80, -70); // Diagonal view
+            camera.lookAt(0, 0, -50);
+            camera.up.set(0, 0, 1);
+            // trackballControls.target(0,0,0);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap; // Sharper shadows
+            document.body.appendChild(renderer.domElement);
+
+            // Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 0, 0); // Focus on the parachute
+            controls.update();
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff);
+            ambientLight.intensity = 0.5;
+            scene.add(ambientLight);
+
+            // Spotlight for sharper shadows
+            const spotLight = new THREE.SpotLight(0xffffff, 1.2);
+            spotLight.position.set(60, 100, 20); // Positioned to shine diagonally
+            spotLight.target.position.set(0, 0, 0);
+            spotLight.castShadow = true;
+
+            // Adjust the shadow camera frustum
+            spotLight.shadow.camera.near = 1; // Start closer to the light
+            spotLight.shadow.camera.far = 1000; // Extend far enough for shadows to not be cut off
+            spotLight.shadow.camera.left = -500; // Extend to the left
+            spotLight.shadow.camera.right = 500; // Extend to the right
+            spotLight.shadow.camera.top = 500; // Extend upwards
+            spotLight.shadow.camera.bottom = -500; // Extend downwards
+            spotLight.shadow.mapSize.width = 2048; // Higher resolution for sharper shadows
+            spotLight.shadow.mapSize.height = 2048;
+            spotLight.shadow.focus = 1;
+            spotLight.intensity = 0.9;
+
+            scene.add(spotLight);
+            scene.add(spotLight.target);
+
+
+            //             // Visualize the shadow camera frustum (optional, for debugging)
+            // const shadowCameraHelper = new THREE.CameraHelper(spotLight.shadow.camera);
+            // scene.add(shadowCameraHelper);
+
+            // Ground (Box Geometry as a Thin Plate)
+            const groundGeometry = new THREE.BoxGeometry(2000, 2000, 10); // Thin plate with normal along z-axis
+            const groundMaterial = new THREE.MeshPhongMaterial({
+                color: 0xcccccc, // Light grey
+                shininess: 0
+            });
+            const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+            ground.position.set(0, 0, -60); // Slightly below the origin
+            ground.receiveShadow = true;
+            scene.add(ground);
+
+            // Groups for rods and shells
+            rodGroup = new THREE.Group();
+            shellGroup = new THREE.Group();
+            scene.add(rodGroup);
+            scene.add(shellGroup);
+
+            // Time steps
+            nRodTimes = rodData.nodePositions.length;
+            nShellTimes = shellData.nodes.length / (9 * shellData.nTri);
+
+            // Capturer for screenshots
+            capturer = new CCapture({ format: 'png' });
+
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Start the capture process
+            capturer.start();
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            if (capturing && globalCounter < Math.min(nRodTimes, nShellTimes)) {
+                requestAnimationFrame(animate);
+                render();
+            } else if (capturing) {
+                // Stop capturing after one complete pass
+                capturer.stop();
+                capturer.save();
+                capturing = false; // Ensure it doesn't repeat
+            }
+        }
+
+        function render() {
+            // Clear previous rods
+            while (rodGroup.children.length > 0) {
+                rodGroup.remove(rodGroup.children[0]);
+            }
+
+            // Clear previous shells
+            while (shellGroup.children.length > 0) {
+                shellGroup.remove(shellGroup.children[0]);
+            }
+
+            // Render Rods
+            const rodPositions = rodData.nodePositions[globalCounter];
+            rodData.connectivity.forEach(([startIdx, endIdx]) => {
+                const start = new THREE.Vector3(
+                    rodPositions[3 * startIdx],
+                    rodPositions[3 * startIdx + 1],
+                    rodPositions[3 * startIdx + 2] + offset
+                );
+                const end = new THREE.Vector3(
+                    rodPositions[3 * endIdx],
+                    rodPositions[3 * endIdx + 1],
+                    rodPositions[3 * endIdx + 2] + offset
+                );
+
+                const direction = new THREE.Vector3().subVectors(end, start);
+                const length = direction.length();
+                const midPoint = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
+
+                const rodGeometry = new THREE.CylinderGeometry(0.2, 0.2, length, 12);
+                const rodMaterial = new THREE.MeshPhongMaterial({ color: 0xff0000 });
+                const rod = new THREE.Mesh(rodGeometry, rodMaterial);
+
+                rod.position.copy(midPoint);
+                rod.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
+                rod.castShadow = true;
+                rodGroup.add(rod);
+            });
+
+            // Render Shells
+            const baseIndexShell = globalCounter * 9 * shellData.nTri;
+            for (let t = 0; t < shellData.nTri; t++) {
+                const v1 = new THREE.Vector3(
+                    shellData.nodes[baseIndexShell + 9 * t],
+                    shellData.nodes[baseIndexShell + 9 * t + 1],
+                    shellData.nodes[baseIndexShell + 9 * t + 2] + offset
+                );
+                const v2 = new THREE.Vector3(
+                    shellData.nodes[baseIndexShell + 9 * t + 3],
+                    shellData.nodes[baseIndexShell + 9 * t + 4],
+                    shellData.nodes[baseIndexShell + 9 * t + 5] + offset
+                );
+                const v3 = new THREE.Vector3(
+                    shellData.nodes[baseIndexShell + 9 * t + 6],
+                    shellData.nodes[baseIndexShell + 9 * t + 7],
+                    shellData.nodes[baseIndexShell + 9 * t + 8] + offset
+                );
+
+                const geometry = new THREE.BufferGeometry().setFromPoints([v1, v2, v3]);
+                geometry.setIndex([0, 1, 2]);
+                geometry.computeVertexNormals();
+
+                const material = new THREE.MeshPhongMaterial({
+                    color: 0x88ccff,
+                    // metalness: 0.0,
+                    // roughness: 0.8,
+                    shininess: 0,
+                    specular: 0x000000,
+                    side: THREE.DoubleSide
+                });
+
+                const triangle = new THREE.Mesh(geometry, material);
+                triangle.castShadow = true;
+                shellGroup.add(triangle);
+            }
+
+            capturer.capture(renderer.domElement);
+            globalCounter++;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>

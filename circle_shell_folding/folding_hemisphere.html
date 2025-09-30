@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - ShadowMapViewer example </title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #000;
+				color: #fff;
+				margin: 0px;
+				overflow: hidden;
+			}
+			#info {
+				position: absolute;
+				top: 10px;
+				width: 100%;
+				text-align: center;
+				z-index: 100;
+				display:block;
+			}
+			#info a { color: #f00; font-weight: bold; text-decoration: underline; cursor: pointer }
+		</style>
+	</head>
+	<body>
+		
+		<canvas id="myCanvas" style="font-family: Monospace;
+				background-color: #000; color: #fff; margin: 0px; overflow: hidden;">
+				
+		<script src="../js/build/three.js"></script>
+		<script src="../js/examples/js/controls/OrbitControls.js"></script>
+		<script src="../js/examples/js/shaders/UnpackDepthRGBAShader.js"></script>
+		<script src="../js/examples/js/utils/ShadowMapViewer.js"></script>
+		<script src="../js/examples/js/libs/stats.min.js"></script>
+		
+		<script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+		
+		<!-- <script src="shellData_Y2e7_5sec.js"></script> -->
+		 <script src="shellData_Y2e6_5sec_new.js"></script>
+
+		<script>
+
+			var camera, scene, renderer, clock, stats;
+			var dirLight, spotLight;
+			var nTri, nodes;
+			var triGroup, guideRailMax, guideRailMin;
+			var globalCounter, nTimes;
+			
+			
+			// Create a capturer that exports PNG images in a TAR file
+			var capturer = new CCapture( { format: 'png' } );
+			var canvas = document.getElementById("myCanvas");
+			
+			init();
+			animate();
+
+			function init() {
+
+				initScene();
+				initMisc();
+
+				document.body.appendChild( renderer.domElement );
+				window.addEventListener( 'resize', onWindowResize, false );
+			}
+
+			function initScene() 
+			{
+				// PerspectiveCamera( fov : Number, aspect : Number, near : Number, far : Number )
+				camera = new THREE.PerspectiveCamera( 70, window.innerWidth / window.innerHeight, 1, 3000 );
+				// Change the following line to change the "boundary" of the scene (important line)	
+				camera.up = new THREE.Vector3( 0, 0, 1 );
+				//camera.position.set( 20, 100, 20 );
+				// camera.position.set( 100, -100, 100 ); // PIYUSH
+				// camera.position.set( 50, -100, 70 ); // CHANGED FOR FLOWCHART
+				// https://discoverthreejs.com/book/first-steps/first-scene/
+
+				// camera.position.set( -50, -150, 150 ); // CHANGED FOR FLOWCHART
+				camera.position.set( 0, -50, 50 ); // CHANGED FOR FLOWCHART
+				
+				scene = new THREE.Scene();
+				// scene.background = new THREE.Color( 0xe0e0e0 );
+				scene.background = new THREE.Color( 0xffffff ); // CHANGED FOR FLOWCHART
+
+				// Lights
+				scene.add( new THREE.AmbientLight( 0x606060 ) );
+
+				// scene.add( new THREE.CameraHelper( spotLight.shadow.camera ) );
+
+				// dirLight = new THREE.DirectionalLight( 0x999999,0.4);
+				// dirLight.name = 'Dir. Light';
+				// dirLight.position.set( 0, 10, 0 );
+				// dirLight.target.position.set( 10, 0, 10 );
+				// dirLight.castShadow = true;
+				// dirLight.shadow.camera.near = 8;
+				// dirLight.shadow.camera.far = 200;
+				// dirLight.shadow.camera.right = 150;
+				// dirLight.shadow.camera.left = - 150;
+				// dirLight.shadow.camera.top	= 150;
+				// dirLight.shadow.camera.bottom = - 150;				
+				// dirLight.shadow.mapSize.width = 10240;
+				// dirLight.shadow.mapSize.height = 10240;
+				// scene.add( dirLight );	
+
+				// PIYUSH START
+				// spotLight = new THREE.SpotLight( 0x9090b0 );
+				// spotLight = new THREE.SpotLight( 0xb6ecffff );
+
+				// spotLight = new THREE.SpotLight( 0xecfaffff );
+				spotLight = new THREE.SpotLight( 0xD6F5FF );
+				spotLight.name = 'Spot Light';
+				// spotLight.angle = 2.5;
+				// spotLight.penumbra = 0.5;
+				spotLight.angle = 2.5;
+				spotLight.penumbra = 0.5;
+				//// spotLight.position.set( 40, 100, -90 );
+				//// spotLight.position.set(-250, 120, 600);
+				//// spotLight.position.set(-250, 120, 600);
+				// spotLight.position.set(-100, 200, 200);
+				// spotLight.position.set(-50, 50, 300);
+				spotLight.position.set(-50, 100, 300);
+				spotLight.castShadow = true;
+				// spotLight.shadow.camera.near = 50;
+				// spotLight.shadow.camera.far = 350;
+
+				spotLight.shadow.camera.near = 10;
+				spotLight.shadow.camera.far = 390;
+
+				spotLight.intensity = 1;
+				spotLight.shadow.mapSize.width = 1042;
+				spotLight.shadow.mapSize.height = 1042;
+				// spotLight.shadow.color = new THREE.Color(0,0,0); 
+				// console.log(spotLight.shadow.color); // Should print an object with color properties (or undefined)
+
+				// spotLight.shadow.color.set(0x9090b0 )
+				// spotLight.shadow.color.setRGB(0.5, 0.5, 0.5);  // Makes the shadow lighter
+
+				scene.add( spotLight );
+
+
+				// // chatgpt trial
+				// // SpotLight setup
+				// spotLight = new THREE.SpotLight(0xecfaffff);
+				// spotLight.name = 'Spot Light';
+				// spotLight.angle = 2.5;
+				// spotLight.penumbra = 0.5;
+				// spotLight.position.set(-50, 100, 300);
+				// spotLight.castShadow = true;
+
+				// // Adjust shadow properties for smoother and lighter shadows
+				// spotLight.shadow.camera.near = 10;
+				// spotLight.shadow.camera.far = 390;
+				// spotLight.intensity = 0.8; // Slightly lower intensity
+				// spotLight.shadow.mapSize.width = 2048; // Use smaller shadow map size for smoother edges
+				// spotLight.shadow.mapSize.height = 2048;
+				// spotLight.shadow.radius = 4; // Blur shadow edges for smoothness
+
+				// scene.add(spotLight);
+
+
+				// Add ground
+				// var groundgeometry = new THREE.BoxGeometry( 2000, 2000.0, 1.0 );
+				// var groundmaterial = new THREE.MeshPhongMaterial( {
+				// 	color: 0xe8faff,
+				// 	shininess: 0,
+				// 	specular: 0xff0000
+				// } );
+				// var ground = new THREE.Mesh( groundgeometry, groundmaterial );
+				// ground.scale.multiplyScalar( 1 );
+				// ground.position.set( -100, -35, -30 );
+				// ground.castShadow = false;
+				// ground.receiveShadow = true;
+				// scene.add( ground );
+
+				var groundgeometry = new THREE.BoxGeometry( 10000, 10000.0, 1.0 );
+				var groundmaterial = new THREE.MeshPhongMaterial( {
+					// color: 0xedfbff, // grey
+					// color: 0x69d7ffff,
+					// color: 0xD6F5FF,
+					color: 0x808080, // grey
+					shininess: 0,
+					specular: 0x000000 // Neutral specular to avoid color influence (COLOR CHANGED)
+				} );
+
+				var groundshadow = new THREE.ShadowMaterial({ opacity: 0 });
+				var ground = new THREE.Mesh( groundgeometry, groundmaterial, groundshadow );
+				ground.scale.multiplyScalar( 1 );
+				ground.position.set( -100, -35, -100 );
+				ground.castShadow = false;
+				ground.receiveShadow = true;
+				scene.add( ground ); // Uncomment to add ground
+
+				// PIYUSH END
+
+				// const helperdirlight = new THREE.DirectionalLightHelper(dirLight);
+				// scene.add(helperdirlight);
+				
+				// Timing
+				globalCounter = 0;
+				nTimes = nodes.length / (9 * nTri );				
+			}
+
+			function initMisc() {
+
+				renderer = new THREE.WebGLRenderer({
+							canvas: canvas, 
+							antialias: true,
+                    		preserveDrawingBuffer: true
+                	});
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				// renderer.shadowMap.type = THREE.BasicShadowMap;
+				renderer.shadowMap.type = THREE.PCFSoftShadowMap;  // Softer, lighter shadows
+
+
+				// Mouse control
+				var controls = new THREE.OrbitControls( camera, renderer.domElement );
+				controls.target.set( 8, 2, 0 );
+				controls.update();
+
+				clock = new THREE.Clock();
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );				
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			function animate() {
+				
+				// Capture screen
+				if (globalCounter == 0)
+				{					
+					capturer.start( canvas );
+				}
+				
+				requestAnimationFrame( animate );
+				render();
+				stats.update();			
+				
+				// Capture screen
+				if (globalCounter <= nTimes)
+				{
+					capturer.capture( canvas );
+				}
+				
+				if (globalCounter == nTimes + 1)
+				{
+					capturer.stop();
+					capturer.save();
+				}
+									
+				//console.log(globalCounter);
+			}
+
+			function renderScene() {
+
+				renderer.render( scene, camera );
+
+			}
+
+			function render() {
+
+				var delta = clock.getDelta();
+
+				renderScene();
+						
+				if (globalCounter >= nTimes)
+				{			
+					globalCounter = globalCounter + 1;
+					// console.log(globalCounter);
+					return;
+				}
+				
+				//
+				// Add triangles
+				//
+				if (globalCounter > 0 )
+				{
+					scene.remove(triGroup);
+				}
+				
+				triGroup = new THREE.Group();
+
+				var material = new THREE.MeshPhongMaterial({
+					color: 0xFFFFFF,        // base white
+					// color: 0x06556d, // dark blue
+					shininess: 40,          // add some gloss so it catches light
+					specular: 0xAAAAAA,     // soft grey highlights
+					flatShading: false      // smoother shading (default)
+				});
+
+				var i;
+				var startNum = globalCounter * nTri;
+				var endNum = globalCounter * nTri + nTri;
+				
+				for (i = startNum+1; i <= endNum; i++) 
+				{
+					// Read the three nodes
+					
+					var geom = new THREE.Geometry();
+					var v1 = new THREE.Vector3( nodes[9*(i-1) + 0], nodes[9*(i-1) + 1], nodes[9*(i-1) + 2]);
+					var v2 = new THREE.Vector3( nodes[9*(i-1) + 3], nodes[9*(i-1) + 4], nodes[9*(i-1) + 5]);
+					var v3 = new THREE.Vector3( nodes[9*(i-1) + 6], nodes[9*(i-1) + 7], nodes[9*(i-1) + 8]);
+					
+					// Note that we need to create two triangle, one for
+					// the upward face and the other one for the downward
+					// face.
+					
+					//
+					// Construct the first triangle
+					//
+					
+					var triangle = new THREE.Triangle( v1 , v2 , v3 );
+					var normal = new THREE.Vector3();
+					triangle.getNormal(normal); // to prevent getNormal target is now required warning
+					geom.vertices.push(triangle.a);
+					geom.vertices.push(triangle.b);
+					geom.vertices.push(triangle.c);		
+					geom.faces.push( new THREE.Face3( 0, 1, 2, normal ) );
+															
+					var mesh = new THREE.Mesh( geom, material );
+					mesh.castShadow = true;
+					mesh.receiveShadow = true;
+					triGroup.add(mesh);
+					
+					//
+					// Construct the second triangle
+					
+					var geom2 = new THREE.Geometry();
+					var triangle2 = new THREE.Triangle( v1, v3 , v2);
+					var normal2 = new THREE.Vector3();
+					triangle2.getNormal(normal2);
+					geom2.vertices.push(triangle2.a);
+					geom2.vertices.push(triangle2.b);
+					geom2.vertices.push(triangle2.c);
+					geom2.faces.push( new THREE.Face3( 0, 1, 2, normal2 ) );
+					
+					var mesh2 = new THREE.Mesh( geom2, material );
+					mesh2.castShadow = true;
+					mesh2.receiveShadow = false;					
+					
+					triGroup.add(mesh2);
+				}
+				scene.add( triGroup );				
+				
+				globalCounter = globalCounter + 1; // update counter
+				
+				// console.log(globalCounter);
+			}
+
+		</script>
+	</body>
+</html>
+

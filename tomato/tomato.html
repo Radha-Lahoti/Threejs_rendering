@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>Tomato plant shaking</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <!-- Three.js + controls (adjust paths as needed) -->
+  <script src="../js/build/three.js"></script>
+  <script src="../js/examples/js/controls/OrbitControls.js"></script>
+
+  <!-- Optional: CCapture for exporting frames -->
+  <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+
+  <!-- Your data -->
+  <!-- <script src="pepper0.js"></script> -->
+   <script src="tomato2_1.js"></script>
+
+  <script>
+    let camera, scene, renderer, controls;
+    let rodGroup;
+    let globalCounter = 0;
+    let nRodTimes = 0;
+    let capturer;
+    let capturing = true;       // <-- set true if you want to export frames
+    const offset = 0;
+
+    init();
+    animate();
+
+    function init() {
+      if (!window.rodData || !rodData.nodePositions || !rodData.connectivity) {
+        console.error("rodData is missing nodePositions or connectivity.");
+        return;
+      }
+      nRodTimes = rodData.nodePositions.length;
+
+      // ----- Scene & Background -----
+      scene = new THREE.Scene();
+    //   scene.background = new THREE.Color(0xADD8E6); // lighter sky blue
+        scene.background = new THREE.Color(0x9AD3E9); // sky blue background
+      // no fog
+
+      // ----- Renderer -----
+      renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      document.body.appendChild(renderer.domElement);
+
+      // ----- Camera -----
+      const first = rodData.nodePositions[0];
+      const bounds = computeBounds(first);
+      const center = bounds.center;
+      const size = bounds.size.length();
+
+      camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 5000);
+      const dist = Math.max(10, size * 1.2);
+      camera.position.set(center.x + 0*dist, center.y + dist, center.z);
+      camera.up.set(0, 0, 1);
+
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.target.copy(center);
+      controls.update();
+
+      // ----- Lights -----
+      scene.add(new THREE.AmbientLight(0xffffff, 0.3)); // reduced ambient for stronger shadows
+
+        const spotLight = new THREE.SpotLight(0xffffff, 1.5); // brighter spotlight
+        spotLight.position.set(center.x + 200, center.y + 300, center.z + 400);
+        spotLight.target.position.copy(center);
+        spotLight.castShadow = true;
+
+        spotLight.shadow.camera.near = 1;
+        spotLight.shadow.camera.far = 3000;
+        spotLight.shadow.mapSize.set(4096, 4096); // higher res shadows
+        spotLight.shadow.focus = 1;
+        scene.add(spotLight);
+        scene.add(spotLight.target);
+
+      // ----- Ground -----
+      const ground = new THREE.Mesh(
+        new THREE.BoxGeometry(2000, 2000, 10),
+        // new THREE.MeshPhongMaterial({ color: 0x8B4513, shininess: 0 }) // darker brown
+        new THREE.MeshPhongMaterial({ color: 0x78441A, shininess: 0 }) // darker brown
+      );
+      ground.position.set(center.x, center.y, bounds.min.z);
+      ground.receiveShadow = true;
+      scene.add(ground);
+
+      // ----- Groups -----
+      rodGroup = new THREE.Group();
+      scene.add(rodGroup);
+
+      // ----- CCapture -----
+      capturer = new CCapture({ format: 'png' });
+      window.addEventListener('resize', onWindowResize, false);
+
+      if (capturing) capturer.start();
+    }
+
+    function computeBounds(flatXYZ) {
+      const min = new THREE.Vector3(+Infinity, +Infinity, +Infinity);
+      const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+      for (let i = 0; i < flatXYZ.length; i += 3) {
+        const x = flatXYZ[i], y = flatXYZ[i + 1], z = flatXYZ[i + 2];
+        if (x < min.x) min.x = x; if (y < min.y) min.y = y; if (z < min.z) min.z = z;
+        if (x > max.x) max.x = x; if (y > max.y) max.y = y; if (z > max.z) max.z = z;
+      }
+      const size = new THREE.Vector3().subVectors(max, min);
+      const center = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5);
+      return { min, max, size, center };
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      render();
+
+      if (capturing) {
+        capturer.capture(renderer.domElement);
+        if (globalCounter >= nRodTimes - 1) {
+          capturer.stop();
+          capturer.save();
+          capturing = false;
+        }
+      }
+    }
+
+    function render() {
+      for (let i = rodGroup.children.length - 1; i >= 0; i--) {
+        const child = rodGroup.children[i];
+        child.geometry?.dispose?.();
+        child.material?.dispose?.();
+        rodGroup.remove(child);
+      }
+
+      const t = Math.min(globalCounter, nRodTimes - 1);
+      const flat = rodData.nodePositions[t];
+
+      const cylUp = new THREE.Vector3(0, 1, 0);
+    //   const mat = new THREE.MeshPhongMaterial({ color: 0x228B22 }); // forest green
+        const mat = new THREE.MeshPhongMaterial({ color: 0x006400 }); // dark green
+      const tmpStart = new THREE.Vector3();
+      const tmpEnd = new THREE.Vector3();
+      const dir = new THREE.Vector3();
+      const mid = new THREE.Vector3();
+
+      rodData.connectivity.forEach(([i0, i1]) => {
+        tmpStart.set(flat[3 * i0], flat[3 * i0 + 1], flat[3 * i0 + 2] + offset);
+        tmpEnd.set(flat[3 * i1], flat[3 * i1 + 1], flat[3 * i1 + 2] + offset);
+
+        dir.subVectors(tmpEnd, tmpStart);
+        const length = dir.length();
+        if (length === 0) return;
+
+        mid.addVectors(tmpStart, tmpEnd).multiplyScalar(0.5);
+
+        const geom = new THREE.CylinderGeometry(0.2, 0.2, length, 12);
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.castShadow = true;
+        mesh.position.copy(mid);
+        mesh.quaternion.setFromUnitVectors(cylUp, dir.normalize());
+
+        rodGroup.add(mesh);
+      });
+
+      if (capturing) {
+        globalCounter = Math.min(globalCounter + 1, nRodTimes - 1);
+      } else {
+        globalCounter = (globalCounter + 1) % nRodTimes;
+      }
+
+      renderer.render(scene, camera);
+    }
+  </script>
+</body>
+</html>

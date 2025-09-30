@@ -1,0 +1,9 @@
+# Local file system
+.DS_Store
+
+# .js files
+*.js
+
+# zip files
+*.zip
+
