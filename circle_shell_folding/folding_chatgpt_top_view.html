@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Three.js — Soft Spot + Smooth + Auto CCapture PNG Frames</title>
+  <title>Three.js — Top View + Soft Spot + Smooth + Auto CCapture</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     html, body { margin:0; height:100%; overflow:hidden; background:#ffffff; }
@@ -22,8 +22,8 @@
   <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
 
   <!-- Load your data (defines nTri and nodes) -->
-  <script src="shellData_Y2e7_5sec_new.js"></script>
-  <!-- <script src="shellData_Y2e6_5sec_new.js"></script> -->
+  <!-- <script src="shellData_Y2e7_5sec_new.js"></script> -->
+  <script src="shellData_Y2e6_5sec_new.js"></script>
 
   <script>
   (function () {
@@ -48,10 +48,15 @@
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0xE7E7E7);
 
+    // Parent for model so we can roll it 90° CCW in top view
+    const modelRoot = new THREE.Group();
+    modelRoot.rotation.z = Math.PI / 2; // 90° anticlockwise (use -Math.PI/2 for clockwise)
+    scene.add(modelRoot);
+
+    // Top view camera (looking down +Z)
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
     camera.up.set(0,0,1);
-    camera.position.set(-40, 0, 10);
-    // camera.position.set(0, 0, 30);
+    camera.position.set(0, 0, 30);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.target.set(0,0,0);
@@ -67,9 +72,9 @@
     spot.target.position.set(0,0,0);
     scene.add(spot.target);
     spot.angle = 0.42;
-    spot.penumbra = 0.5;
+    spot.penumbra = 0.9;
     spot.castShadow = true;
-    spot.shadow.mapSize.set(1024, 1024);
+    spot.shadow.mapSize.set(2048, 2048);
     spot.shadow.camera.near = 8;
     spot.shadow.camera.far  = 180;
     spot.shadow.bias = -0.0006;
@@ -93,7 +98,7 @@
 
     // --- cloth material (matte) ---
     const triMat = new THREE.MeshStandardMaterial({
-      color: 0xFF69B4,     // HotPink; try 0xFFB6C1 (LightPink) or 0x6FA9C9 (sky blue)
+      color: 0xFF69B4,     // HotPink; try 0xFFB6C1 or 0x6FA9C9
       roughness: 0.98,
       metalness: 0.0,
       side: THREE.DoubleSide,
@@ -153,41 +158,35 @@
     let startedCapture = false;
 
     function stepAndCapture() {
-      // Start capture exactly once
-      if (!startedCapture) {
-        capturer.start(canvas);
-        startedCapture = true;
-      }
+      if (!startedCapture) { capturer.start(canvas); startedCapture = true; }
 
-      // Swap to the current frame mesh
+      // swap mesh for this frame
       if (triMesh) {
         triMesh.geometry.dispose();
-        scene.remove(triMesh);
+        modelRoot.remove(triMesh);
         triMesh = null;
       }
       triMesh = buildFrameMesh(frameIndex);
-      if (triMesh) scene.add(triMesh);
+      if (triMesh) modelRoot.add(triMesh); // <-- add to rotated parent
 
-      // Render & capture this frame
+      // render & capture
       renderer.render(scene, camera);
       capturer.capture(canvas);
 
-      // Advance; if finished, stop & save (no button needed)
       frameIndex++;
       if (frameIndex < totalFrames) {
         requestAnimationFrame(stepAndCapture);
       } else {
         capturer.stop();
-        capturer.save();         // triggers the .tar download of PNGs
+        capturer.save();
         console.log("Saved", totalFrames, "frames.");
-        // If you want to keep orbiting after export, you can start a free-run loop here.
       }
     }
 
-    // Kick off the export immediately
+    // start auto export immediately
     requestAnimationFrame(stepAndCapture);
 
-    // --- keep resize handling (affects both preview & export) ---
+    // --- resize ---
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
