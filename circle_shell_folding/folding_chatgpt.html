@@ -2,88 +2,86 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Three.js Stable Lighting (SpotLight, smooth shading)</title>
+  <title>Three.js — Soft Spot + Smooth + Auto CCapture PNG Frames</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #ffffff; }
-    #app { width: 100%; height: 100%; display: block; }
+    html, body { margin:0; height:100%; overflow:hidden; background:#ffffff; }
+    #app { width:100%; height:100%; display:block; }
   </style>
 </head>
 <body>
   <canvas id="app"></canvas>
 
-  <!-- Local three build & controls (non-module) -->
+  <!-- three.js (non-module) + controls -->
   <script src="../js/build/three.js"></script>
   <script src="../js/examples/js/controls/OrbitControls.js"></script>
-  <!-- Utils for smoothing (non-module version attaches THREE.BufferGeometryUtils) -->
+  <!-- BufferGeometryUtils (non-module: attaches THREE.BufferGeometryUtils) -->
   <script src="../js/examples/js/utils/BufferGeometryUtils.js"></script>
 
-  <!-- Load your data (defines global nTri and nodes) -->
-  <!-- <script src="shellData_Y2e6_5sec_new.js"></script> -->
-   <script src="shellData_Y2e7_5sec_new.js"></script>
+  <!-- CCapture -->
+  <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+
+  <!-- Load your data (defines nTri and nodes) -->
+  <!-- <script src="shellData_Y2e7_5sec_new.js"></script> -->
+  <script src="shellData_Y2e6_5sec_new.js"></script>
 
   <script>
   (function () {
     if (typeof nTri === "undefined" || typeof nodes === "undefined" || !Array.isArray(nodes)) {
-      console.error("Expected global nTri and nodes[] from shellData_Y2e6_5sec_new.js");
+      console.error("Expected global nTri and nodes[] from your data .js");
       return;
     }
 
+    // --- canvas / renderer ---
     const canvas = document.getElementById("app");
-
-    // --- renderer ---
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, preserveDrawingBuffer:true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.7;             // overall a bit dimmer
-    renderer.physicallyCorrectLights = false;        // simpler spot intensity control
+    renderer.toneMappingExposure = 0.7;
+    renderer.physicallyCorrectLights = false;
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    // --- scene/camera/controls ---
+    // --- scene / camera / controls (Z-up) ---
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0xE7E7E7);   // light gray helps prevent glare
+    scene.background = new THREE.Color(0xE7E7E7);
 
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.up.set(0, 0, 1);
-    camera.position.set(22, -22, 22);
+    camera.up.set(0,0,1);
+    camera.position.set(30, -30, 10);
 
     const controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.target.set(0, 0, 0);
+    controls.target.set(0,0,0);
     controls.update();
 
-    // --- subtle fill + soft spotlight ---
+    // --- lights: subtle hemi + soft spotlight ---
     const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.10);
-    hemi.position.set(0, 0, 1);
+    hemi.position.set(0,0,1);
     scene.add(hemi);
 
-    const spot = new THREE.SpotLight(0xffffff, 0.42);  // gentle
+    const spot = new THREE.SpotLight(0xffffff, 0.42);
     spot.position.set(28, -18, 120);
-    spot.target.position.set(0, 0, 0);
+    spot.target.position.set(0,0,0);
     scene.add(spot.target);
-    spot.angle = 0.42;            // ~24° cone (reduced spill)
-    spot.penumbra = 0.9;          // very soft edge
-    // shadows
+    spot.angle = 0.42;
+    spot.penumbra = 0.5;
     spot.castShadow = true;
     spot.shadow.mapSize.set(1024, 1024);
     spot.shadow.camera.near = 8;
     spot.shadow.camera.far  = 180;
     spot.shadow.bias = -0.0006;
     spot.shadow.normalBias = 0.025;
-    spot.shadow.radius = 3;       // extra blur with PCFSoftShadowMap
+    spot.shadow.radius = 3;
     scene.add(spot);
 
-    // --- shadow-catcher ground (softer, controllable shadow) ---
-    // --- shadow-catcher ground for Z-up (no rotation needed) ---
+    // --- Z-up shadow-catcher ground (no rotation) ---
     const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(10000, 10000),
-    new THREE.ShadowMaterial({ opacity: 0.28 }) // tweak for softer/darker shadow
+      new THREE.PlaneGeometry(10000, 10000),
+      new THREE.ShadowMaterial({ opacity: 0.28 })
     );
-    // DO NOT rotate for Z-up:
-    ground.rotation.set(0, 0, 0);
-    ground.position.set(0, 0, -25);   // below your cloth
+    ground.position.set(0,0,-15);
     ground.receiveShadow = true;
     scene.add(ground);
 
@@ -92,20 +90,16 @@
     const perFrameCount = triStride * nTri;
     const totalFrames = Math.floor(nodes.length / perFrameCount);
 
-    // --- cloth material (very matte) ---
+    // --- cloth material (matte) ---
     const triMat = new THREE.MeshStandardMaterial({
-    //   color: 0xFFB6C1,     // LightPink (nice for cloth). Try 0x6FA9C9 for sky blue.
-        color: 0xFF69B4,
+      color: 0xFF69B4,     // HotPink; try 0xFFB6C1 (LightPink) or 0x6FA9C9 (sky blue)
       roughness: 0.98,
       metalness: 0.0,
       side: THREE.DoubleSide,
-      flatShading: false    // smooth shading after mergeVertices()
+      flatShading: false
     });
 
-    // --- build one smooth mesh per frame ---
-    let triMesh = null;
-    let frame = 0;
-
+    // --- build smooth mesh for a frame ---
     function buildFrameMesh(frameIndex) {
       if (frameIndex >= totalFrames) return null;
 
@@ -118,15 +112,9 @@
 
       for (let t = 0; t < triCount; t++) {
         const off = (baseTri + t) * 9;
-        positions[p++] = nodes[off + 0];
-        positions[p++] = nodes[off + 1];
-        positions[p++] = nodes[off + 2];
-        positions[p++] = nodes[off + 3];
-        positions[p++] = nodes[off + 4];
-        positions[p++] = nodes[off + 5];
-        positions[p++] = nodes[off + 6];
-        positions[p++] = nodes[off + 7];
-        positions[p++] = nodes[off + 8];
+        positions[p++] = nodes[off + 0]; positions[p++] = nodes[off + 1]; positions[p++] = nodes[off + 2];
+        positions[p++] = nodes[off + 3]; positions[p++] = nodes[off + 4]; positions[p++] = nodes[off + 5];
+        positions[p++] = nodes[off + 6]; positions[p++] = nodes[off + 7]; positions[p++] = nodes[off + 8];
 
         const baseV = t * 3;
         indices[idx++] = baseV + 0;
@@ -138,8 +126,7 @@
       geom.setAttribute("position", new THREE.BufferAttribute(positions, 3));
       geom.setIndex(new THREE.BufferAttribute(indices, 1));
 
-      // --- smooth shading: weld shared vertices then recompute normals ---
-      // Tolerance (in world units) should be tiny; your Z values are ~1e-4, so use 1e-6.
+      // Smooth shading: weld close verts, then normals (lower tolerance = less smoothing)
       if (THREE.BufferGeometryUtils && THREE.BufferGeometryUtils.mergeVertices) {
         geom = THREE.BufferGeometryUtils.mergeVertices(geom, 1e-8);
       }
@@ -147,44 +134,59 @@
 
       const mesh = new THREE.Mesh(geom, triMat);
       mesh.castShadow = true;
-    // mesh.castShadow = false;
-      mesh.receiveShadow = false;
+      mesh.receiveShadow = false; // avoid self-shadow blotches
       return mesh;
     }
 
-    // --- render loop / optional frame advance ---
-    const clock = new THREE.Clock();
-    const fps = 30, spf = 1 / fps;
-    let acc = 0;
+    // ---------- CCAPTURE: auto start, auto stop & save ----------
+    const fps = 30; // exported framerate metadata
+    const capturer = new CCapture({
+      format: "png",
+      framerate: fps,
+      name: "frames",
+      verbose: true
+    });
 
-    function render() {
-      const dt = clock.getDelta();
-      acc += dt;
+    let triMesh = null;
+    let frameIndex = 0;
+    let startedCapture = false;
 
-      if (!triMesh) {
-        triMesh = buildFrameMesh(frame);
-        if (triMesh) scene.add(triMesh);
+    function stepAndCapture() {
+      // Start capture exactly once
+      if (!startedCapture) {
+        capturer.start(canvas);
+        startedCapture = true;
       }
 
-      if (totalFrames > 1) {
-        while (acc >= spf) {
-          acc -= spf;
-          if (triMesh) {
-            triMesh.geometry.dispose();
-            scene.remove(triMesh);
-            triMesh = null;
-          }
-          frame = (frame + 1) % totalFrames;
-          triMesh = buildFrameMesh(frame);
-          if (triMesh) scene.add(triMesh);
-        }
+      // Swap to the current frame mesh
+      if (triMesh) {
+        triMesh.geometry.dispose();
+        scene.remove(triMesh);
+        triMesh = null;
       }
+      triMesh = buildFrameMesh(frameIndex);
+      if (triMesh) scene.add(triMesh);
 
+      // Render & capture this frame
       renderer.render(scene, camera);
-      requestAnimationFrame(render);
+      capturer.capture(canvas);
+
+      // Advance; if finished, stop & save (no button needed)
+      frameIndex++;
+      if (frameIndex < totalFrames) {
+        requestAnimationFrame(stepAndCapture);
+      } else {
+        capturer.stop();
+        capturer.save();         // triggers the .tar download of PNGs
+        console.log("Saved", totalFrames, "frames.");
+        // If you want to keep orbiting after export, you can start a free-run loop here.
+      }
     }
 
-    // --- resize ---
+    // Kick off the export immediately
+    requestAnimationFrame(stepAndCapture);
+
+    // --- keep resize handling (affects both preview & export) ---
     window.addEventListener("resize", () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
@@ -192,7 +194,6 @@
     });
 
     console.log("nTri =", nTri, "nodes.length =", nodes.length, "frames =", totalFrames);
-    render();
   })();
   </script>
 </body>
