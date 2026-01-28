@@ -41,7 +41,6 @@
 		<!-- <script src="rodContactData_n21_2MPa.js"></script> -->
 		<!-- <script src="rodContactDataFinal_2GPa.js"></script> -->
 		<script src="rodData.js"></script>
-		 <!-- <script src="rodData_with_contact.js"></script> -->
 		
 		
 		<script>
@@ -86,7 +85,7 @@
 
 				camera = new THREE.PerspectiveCamera( 20, window.innerWidth / window.innerHeight, 1, 1000 );
 				// Change the following line to change the "boundary" of the scene (important line)	
-				camera.position.set( 0, 150, 50 );
+				camera.position.set( 40, 40, 0 );
 
 				// camera.position.set(0, 0, 50);
                 camera.up = new THREE.Vector3( 0, 0, 1 );
@@ -140,36 +139,14 @@
 				// cube.castShadow = true;
 				// cube.receiveShadow = true;
 				// scene.add( cube );
-
-				sphereRadius = 0.049*100; // set sphere radius
 				
-				var sphereGeom = new THREE.SphereGeometry(
-					sphereRadius,      // radius
-					32,                // widthSegments
-					32,                // heightSegments
-					0,                 // phiStart
-					Math.PI * 2,       // phiLength
-					0,                 // thetaStart
-					Math.PI * 2        // thetaLength → full sphere
-				);
-
-				var blueMaterial = new THREE.MeshPhongMaterial({
-					color: 0x0000ff,
-					// color: 0xdddddd,
-					transparent: true,
-					opacity: 1,
-					shininess: 50,
-					specular: 0x222222
-				});
-
-				var sphere = new THREE.Mesh(sphereGeom, blueMaterial);
-				sphere.castShadow = true;
-				sphere.receiveShadow = true;
-				// sphere.position.set(0, 0, 0);
-				sphere.position.set(0.1*100, 0, 0.05*100); // Position it above the ground
-
-				scene.add(sphere);
-
+				// var sphereGeom =  new THREE.SphereGeometry( sphereRadius, 32, 32 );
+				// SphereGeometry(radius : Float, widthSegments : Integer, heightSegments : Integer, phiStart : Float, phiLength : Float, thetaStart : Float, thetaLength : Float)
+				// var blueMaterial = new THREE.MeshBasicMaterial( { color: 0x0000ff, transparent: true, opacity: 0.4 } );
+				// var sphere = new THREE.Mesh( sphereGeom, blueMaterial );
+				// sphere.castShadow = true;
+				// sphere.position.set( 0, 0, 0 );
+				// scene.add( sphere );
 				
 				// PIYUSH START
 				// dirLight = new THREE.DirectionalLight( 0x999999,0.4);
@@ -203,17 +180,16 @@
 				// scene.add( spotLight );
 				//PIYUSH END
 				// Add ground
-				var groundgeometry = new THREE.BoxGeometry( 500, 500.0, 1.0 );
+				var groundgeometry = new THREE.BoxGeometry( 1000, 1000.0, 1.0 );
 				var groundmaterial = new THREE.MeshPhongMaterial( {
 					color: 0xD6F5FF,
-					// color: 0xdddddd,
 					shininess: 0,
 					specular: 0x000000
 				} );
 				var ground = new THREE.Mesh( groundgeometry, groundmaterial );
 				ground.scale.multiplyScalar( 1 );
 				// ground.position.set( -100, -35, -30 );
-				ground.position.set( -100, -35, -5 );
+				ground.position.set( -100, -35, -10);
 				ground.castShadow = false;
 				ground.receiveShadow = true;
 				scene.add( ground );
@@ -287,7 +263,7 @@
 				render();
 				stats.update();
 				
-				if (globalCounter == nTimes-1)
+				if (globalCounter == nTimes)
 				{
 					capturer.stop();
 					capturer.save();
@@ -414,7 +390,7 @@
 					if (i == 0)
 					{
 						var material = new THREE.MeshPhongMaterial( {
-						color: 0xff0000, //0x11cc00,
+						color: 0xA4653A, //0x11cc00,
 						shininess: 150,
 						specular: 0x222222
 						} );

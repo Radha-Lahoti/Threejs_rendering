@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>three.js rod + m1 arrows</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <style>
+      body {
+        font-family: Monospace;
+        background-color: #000;
+        color: #fff;
+        margin: 0px;
+        overflow: hidden;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        width: 100%;
+        text-align: center;
+        z-index: 100;
+        display: block;
+      }
+      #info a {
+        color: #f00;
+        font-weight: bold;
+        text-decoration: underline;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+
+  <body>
+    <canvas
+      id="myCanvas"
+      style="
+        font-family: Monospace;
+        background-color: #000;
+        color: #fff;
+        margin: 0px;
+        overflow: hidden;
+      "
+    ></canvas>
+
+    <script src="../js/build/three.js"></script>
+    <script src="../js/examples/js/controls/OrbitControls.js"></script>
+    <script src="../js/examples/js/shaders/UnpackDepthRGBAShader.js"></script>
+    <script src="../js/examples/js/utils/ShadowMapViewer.js"></script>
+    <script src="../js/examples/js/WebGL.js"></script>
+    <script src="../js/examples/js/libs/stats.min.js"></script>
+
+    <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+
+    <!-- Your data file MUST define:
+         var nNodes = ...;
+         var rodRadius = ...; (optional, otherwise set below)
+         var nodesRod = [...];
+         var m1Rod = [...];  // packed as: frame-major, edges 0..nEdges-1, (mx,my,mz)
+     -->
+    <script src="rodData.js"></script>
+    <script src="rodData_true.js"></script>
+
+    <script>
+      var camera, scene, renderer, clock, stats;
+      var dirLight, spotLight;
+      var rod, nodesRod;
+      var rodGroup;
+      var nTimes, sphereRadius;
+
+      var globalCounter = 0;
+      var imgCounter = 1;
+      var renderNodes = 200;
+
+      // m1 arrows
+      var arrowLength = 1.0; // will be reset after init if rodRadius exists
+
+      // Create a capturer that exports PNG images in a TAR file
+      var capturer = new CCapture({ format: "png" });
+      var canvas = document.getElementById("myCanvas");
+
+      init();
+      animate();
+
+      function init() {
+        initScene();
+        initMisc();
+
+        document.body.appendChild(renderer.domElement);
+        window.addEventListener("resize", onWindowResize, false);
+
+        // nTimes is "number of rod-frames" in your packed nodesRod
+        nTimes = nodesRod.length / (5 * nNodes);
+
+        // pick a reasonable arrow length relative to rod thickness
+        if (typeof rodRadius !== "undefined" && rodRadius !== null) {
+          arrowLength = 6.0 * rodRadius;
+        } else {
+          // fallback if you don't define rodRadius in rodData.js
+          // (still works, just arrows may be too big/small)
+          arrowLength = 1.0;
+        }
+
+        // sanity checks
+        if (typeof m1Rod === "undefined") {
+          console.warn(
+            "m1Rod is undefined. Add `var m1Rod = [...]` to rodData.js. Arrows will not render."
+          );
+        } else {
+          var expected = nTimes * (nNodes - 1) * 3;
+          if (m1Rod.length !== expected) {
+            console.warn(
+              "m1Rod length mismatch. Expected " +
+                expected +
+                " but got " +
+                m1Rod.length +
+                ". Make sure m1Rod is packed per frame as (nNodes-1)*3 entries."
+            );
+          }
+        }
+      }
+
+      function initScene() {
+        camera = new THREE.PerspectiveCamera(
+          20,
+          window.innerWidth / window.innerHeight,
+          1,
+          1000
+        );
+        camera.position.set(40, 40, 0);
+        camera.up = new THREE.Vector3(0, 0, 1);
+        camera.lookAt(0, 0, 0);
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        // Lights
+        spotLight = new THREE.SpotLight(0x9090b0);
+        spotLight.name = "Spot Light";
+        spotLight.angle = 0.9;
+        spotLight.penumbra = 0.5;
+        spotLight.position.set(50, 50, 200);
+        spotLight.castShadow = true;
+        spotLight.shadow.camera.near = 50;
+        spotLight.shadow.camera.far = 350;
+        spotLight.shadow.mapSize.width = 10240;
+        spotLight.shadow.mapSize.height = 10240;
+        scene.add(spotLight);
+
+        var light = new THREE.AmbientLight(0x808080);
+        scene.add(light);
+
+        // Ground
+        var groundgeometry = new THREE.BoxGeometry(500, 500.0, 1.0);
+        var groundmaterial = new THREE.MeshPhongMaterial({
+          color: 0xd6f5ff,
+          shininess: 0,
+          specular: 0x000000,
+        });
+        var ground = new THREE.Mesh(groundgeometry, groundmaterial);
+        ground.scale.multiplyScalar(1);
+        ground.position.set(0, 0, -5);
+        ground.castShadow = false;
+        ground.receiveShadow = true;
+        scene.add(ground);
+      }
+
+      function initMisc() {
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          antialias: true,
+          preserveDrawingBuffer: true,
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        // Mouse control
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 2, 0);
+        controls.update();
+
+        clock = new THREE.Clock();
+
+        stats = new Stats();
+        document.body.appendChild(stats.dom);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        if (globalCounter == 1) {
+          capturer.start(canvas);
+        }
+
+        if (globalCounter > 0 && globalCounter < nTimes) {
+          capturer.capture(canvas);
+        }
+
+        render();
+        stats.update();
+
+        if (globalCounter == nTimes - 1) {
+          capturer.stop();
+          capturer.save();
+        }
+      }
+
+      function renderScene() {
+        renderer.render(scene, camera);
+      }
+
+      // -----------------------------
+      // Helpers for nodes + m1 arrows
+      // -----------------------------
+      function getNodePos(frameIdx, nodeIdx) {
+        // nodeIdx in [0..nNodes-1]
+        var base = frameIdx * 5 * nNodes + 5 * nodeIdx;
+        return new THREE.Vector3(
+          nodesRod[base + 2],
+          nodesRod[base + 3],
+          nodesRod[base + 4]
+        );
+      }
+
+      function getM1(frameIdx, edgeIdx) {
+        // edgeIdx in [0..nNodes-2]
+        var base = frameIdx * (nNodes - 1) * 3 + 3 * edgeIdx;
+        return new THREE.Vector3(m1Rod[base + 0], m1Rod[base + 1], m1Rod[base + 2]);
+      }
+
+      function addM1ArrowsToGroup(frameIdx, group) {
+        if (typeof m1Rod === "undefined") return;
+
+        var nEdges = nNodes - 1;
+        for (var e = 0; e < nEdges; e++) {
+          var p0 = getNodePos(frameIdx, e);
+          var p1 = getNodePos(frameIdx, e + 1);
+
+          // edge midpoint
+          var origin = new THREE.Vector3().addVectors(p0, p1).multiplyScalar(0.5);
+
+          // m1 direction
+          var dir = getM1(frameIdx, e);
+          if (dir.lengthSq() < 1e-14) continue;
+          dir.normalize();
+
+          var L = arrowLength;
+          var headL = 0.25 * L;
+          var headW = 0.15 * L;
+
+          var arrow = new THREE.ArrowHelper(dir, origin, L, 0xff0000, headL, headW);
+          group.add(arrow);
+        }
+      }
+
+      function render() {
+        var delta = clock.getDelta();
+        renderScene();
+
+        // remove previous group
+        if (globalCounter <= nTimes - 1) {
+          scene.remove(rodGroup);
+        }
+
+        rodGroup = new THREE.Group();
+
+        // detect multiple rods that share the same time stamp
+        var nRodsThisStep = 1;
+        var addRods;
+        do {
+          var cTime = nodesRod[globalCounter * 5 * nNodes];
+          var nextTime;
+          var nextTimeInd = (globalCounter + nRodsThisStep) * 5 * nNodes;
+          addRods = 0;
+          if (nextTimeInd < nodesRod.length) {
+            nextTime = nodesRod[nextTimeInd];
+            if (cTime == nextTime) {
+              nRodsThisStep = nRodsThisStep + 1;
+              addRods = 1;
+            }
+          }
+        } while (addRods == 1);
+
+        for (var i = 0; i < nRodsThisStep; i++) {
+          // freeze which frame we're rendering (IMPORTANT)
+          var frameIdx = globalCounter;
+
+          // Define curve class each time so it captures frameIdx safely
+          function CustomSinCurve(scale) {
+            THREE.Curve.call(this);
+            this.scale = scale === undefined ? 1 : scale;
+          }
+
+          CustomSinCurve.prototype = Object.create(THREE.Curve.prototype);
+          CustomSinCurve.prototype.constructor = CustomSinCurve;
+
+          CustomSinCurve.prototype.getPoint = function (t) {
+            var baseNum = frameIdx * 5 * nNodes;
+            if (baseNum > nodesRod.length) return new THREE.Vector3(0, 0, 0);
+
+            var indRight = t * (nNodes - 1);
+            var indf = Math.floor(indRight);
+            var indc = Math.ceil(indRight);
+            var df = indRight - indf;
+            var dc = -indRight + indc;
+
+            if (df < 1 / (100 * renderNodes)) {
+              df = 1.0;
+              dc = 0.0;
+            }
+
+            var tx =
+              nodesRod[5 * indf + 2 + baseNum] * dc +
+              nodesRod[5 * indc + 2 + baseNum] * df;
+            var ty =
+              nodesRod[5 * indf + 3 + baseNum] * dc +
+              nodesRod[5 * indc + 3 + baseNum] * df;
+            var tz =
+              nodesRod[5 * indf + 4 + baseNum] * dc +
+              nodesRod[5 * indc + 4 + baseNum] * df;
+
+            return new THREE.Vector3(tx, ty, tz).multiplyScalar(this.scale);
+          };
+
+          var path = new CustomSinCurve(1);
+
+          // TubeGeometry(path, tubularSegments, radius, radialSegments, closed)
+          var geometry = new THREE.TubeGeometry(path, 200, rodRadius, 12, false);
+
+          var material;
+          if (i == 0) {
+            material = new THREE.MeshPhongMaterial({
+              color: 0xa4653a,
+              shininess: 150,
+              specular: 0x222222,
+            });
+          } else {
+            material = new THREE.MeshPhongMaterial({
+              color: 0xff0000,
+              shininess: 150,
+              specular: 0x222222,
+            });
+          }
+
+          rod = new THREE.Mesh(geometry, material);
+          rod.castShadow = true;
+          rod.receiveShadow = true;
+          rodGroup.add(rod);
+
+          // Add m1 arrows for this rod frame
+          addM1ArrowsToGroup(frameIdx, rodGroup);
+
+          // next rod frame
+          globalCounter = globalCounter + 1;
+        }
+
+        scene.add(rodGroup);
+      }
+    </script>
+  </body>
+</html>

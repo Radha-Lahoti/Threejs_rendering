@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Two snake rods (ref frozen at t=0 vs obtained time-varying)</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+    <style>
+      body {
+        font-family: Monospace;
+        background-color: #000;
+        color: #000;
+        margin: 0;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas
+      id="myCanvas"
+      style="
+        font-family: Monospace;
+        background-color: #fff;
+        color: #000;
+        margin: 0;
+        overflow: hidden;
+      "
+    ></canvas>
+
+    <!-- three.js and helpers -->
+    <script src="../js/build/three.js"></script>
+    <script src="../js/examples/js/controls/OrbitControls.js"></script>
+    <script src="../js/examples/js/libs/stats.min.js"></script>
+
+    <!-- CCapture -->
+    <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+
+    <!-- Rod data -->
+    <script src="rodData_ref.js"></script>
+    <script src="rodData.js"></script>
+
+    <script>
+      // EXPECTED:
+      // rodData_ref.js defines: nodesRod_ref, nNodes_ref, rodRadius_ref
+      // rodData.js defines:     nodesRod,     nNodes,     rodRadius
+
+      var camera, scene, renderer, clock, stats;
+      var ambientLight;
+      var refGroup, obtGroup;
+      var rodRefStatic = null;
+
+      var globalCounter = 0;
+      var nTimes_ref, nTimes_obt, nTimes;
+      var hasSaved = false;
+
+      var canvas = document.getElementById("myCanvas");
+
+      // CCapture setup
+      var capturer = new CCapture({
+        format: "png",
+        framerate: 60,
+        verbose: true,
+      });
+
+      init();
+      animate();
+
+      function init() {
+        initScene();
+        initMisc();
+
+        document.body.appendChild(renderer.domElement);
+        window.addEventListener("resize", onWindowResize, false);
+
+        // --- IMPORTANT: obtained rod comes from rodData.js (nodesRod/nNodes/rodRadius) ---
+        nTimes_ref = nodesRod_ref.length / (5 * nNodes_ref);
+        nTimes_obt = nodesRod.length / (5 * nNodes);
+
+        // ref is static => DO NOT cap animation length
+        nTimes = nTimes_obt;
+
+        console.log("nTimes_ref =", nTimes_ref, "(ref uses t=0 only)");
+        console.log("nTimes_obt =", nTimes_obt, "=> using nTimes =", nTimes);
+
+        // Build reference rod ONCE at t=0 and keep it
+        rodRefStatic = buildRodAtTime(
+          nodesRod_ref,
+          nNodes_ref,
+          rodRadius_ref,
+          0,          // frozen at t=0
+          0xd95319,   // orange
+          1.0,
+          /*drawOnTop=*/false
+        );
+        if (rodRefStatic) {
+          rodRefStatic.renderOrder = 0;
+          refGroup.add(rodRefStatic);
+        }
+
+        capturer.start();
+        console.log("CCapture started");
+      }
+
+      function initScene() {
+        camera = new THREE.PerspectiveCamera(
+          20,
+          window.innerWidth / window.innerHeight,
+          1,
+          5000
+        );
+        camera.position.set(0, 200, 200);
+        camera.up.set(0, 1, 0);
+        camera.lookAt(0, 0, 0);
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        ambientLight = new THREE.AmbientLight(0x888888);
+        scene.add(ambientLight);
+
+        var dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+        dirLight.position.set(30, -30, 50);
+        scene.add(dirLight);
+
+        // Groups: ref never cleared, obt cleared each frame
+        refGroup = new THREE.Group();
+        obtGroup = new THREE.Group();
+        scene.add(refGroup);
+        scene.add(obtGroup);
+      }
+
+      function initMisc() {
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          antialias: true,
+          preserveDrawingBuffer: true,
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = false;
+
+        // keep sorting enabled; we’ll also use renderOrder
+        renderer.sortObjects = true;
+
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 0);
+        controls.update();
+
+        clock = new THREE.Clock();
+
+        stats = new Stats();
+        document.body.appendChild(stats.dom);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        renderFrame();
+        stats.update();
+
+        if (!hasSaved) {
+          if (globalCounter < nTimes) {
+            capturer.capture(renderer.domElement);
+          } else {
+            console.log("Stopping capture and saving...");
+            capturer.stop();
+            capturer.save();
+            hasSaved = true;
+          }
+        }
+      }
+
+      function renderScene() {
+        renderer.render(scene, camera);
+      }
+
+      function renderFrame() {
+        if (globalCounter >= nTimes) {
+          renderScene();
+          return;
+        }
+
+        // Clear ONLY obtained rods
+        while (obtGroup.children.length > 0) {
+          obtGroup.remove(obtGroup.children[0]);
+        }
+
+        // Build obtained rod at current time
+        var rod_obt = buildRodAtTime(
+          nodesRod,
+          nNodes,
+          rodRadius,
+          globalCounter,
+          0x0072bd, // blue
+          1.0,
+          /*drawOnTop=*/true
+        );
+
+        if (rod_obt) {
+          rod_obt.renderOrder = 1; // always on top
+          obtGroup.add(rod_obt);
+        }
+
+        globalCounter += 1;
+        renderScene();
+      }
+
+      // Build a single rod mesh for a given time index from flattened nodes array
+      // drawOnTop=true makes it ignore depth so it won't get occluded.
+      function buildRodAtTime(
+        nodesArray,
+        nNodesLocal,
+        rodRadiusLocal,
+        tIndex,
+        color,
+        opacity,
+        drawOnTop
+      ) {
+        if (!nodesArray || !isFinite(nNodesLocal) || nNodesLocal <= 1) return null;
+
+        if (
+          typeof rodRadiusLocal === "undefined" ||
+          !isFinite(rodRadiusLocal) ||
+          rodRadiusLocal <= 0
+        ) {
+          rodRadiusLocal = 0.02; // fallback
+        }
+
+        var baseNum = tIndex * 5 * nNodesLocal;
+        if (baseNum + 5 * (nNodesLocal - 1) + 4 >= nodesArray.length) {
+          return null;
+        }
+
+        var points = [];
+        for (var j = 0; j < nNodesLocal; j++) {
+          var idx = baseNum + 5 * j;
+          var tx = nodesArray[idx + 2];
+          var ty = nodesArray[idx + 3];
+          var tz = nodesArray[idx + 4];
+          points.push(new THREE.Vector3(tx, ty, tz));
+        }
+
+        var path = new THREE.CatmullRomCurve3(points);
+        var geometry = new THREE.TubeGeometry(path, 200, rodRadiusLocal, 12, false);
+
+        var material = new THREE.MeshPhongMaterial({
+          color: color,
+          transparent: opacity < 1,
+          opacity: opacity,
+          shininess: 150,
+          specular: 0x222222,
+          depthTest: !drawOnTop,   // if drawOnTop=true => depthTest=false
+          depthWrite: !drawOnTop,  // if drawOnTop=true => don't write depth either
+        });
+
+        var rod = new THREE.Mesh(geometry, material);
+        rod.castShadow = false;
+        rod.receiveShadow = false;
+
+        return rod;
+      }
+    </script>
+  </body>
+</html>

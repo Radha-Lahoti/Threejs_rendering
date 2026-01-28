@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>three.js webgl - Shell render (indexed)</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+      body {
+        font-family: Monospace;
+        background-color: #000;
+        color: #fff;
+        margin: 0px;
+        overflow: hidden;
+      }
+      #info {
+        position: absolute;
+        top: 10px;
+        width: 100%;
+        text-align: center;
+        z-index: 100;
+        display:block;
+      }
+      #info a { color: #f00; font-weight: bold; text-decoration: underline; cursor: pointer }
+    </style>
+  </head>
+  <body>
+
+    <canvas id="myCanvas" style="font-family: Monospace; background-color: #000; color: #fff; margin: 0px; overflow: hidden;"></canvas>
+
+    <script src="../js/build/three.js"></script>
+    <script src="../js/examples/js/controls/OrbitControls.js"></script>
+    <script src="../js/examples/js/shaders/UnpackDepthRGBAShader.js"></script>
+    <script src="../js/examples/js/utils/ShadowMapViewer.js"></script>
+    <script src="../js/examples/js/libs/stats.min.js"></script>
+
+    <script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+
+    <!-- Your data should define: nTri, nNodes, nodes, tris -->
+    <script src="ribbon.js"></script>
+
+    <script>
+      var camera, scene, renderer, clock, stats;
+      var spotLight;
+      var triGroup;
+      var globalCounter, nTimes;
+
+      // 0 if tris are 0-based; 1 if tris are 1-based (MATLAB-style)
+      const INDEX_BASE = 1;
+
+      // --- CCapture setup (export PNG frames tar) ---
+      const capturer = new CCapture({
+        format: 'png',
+        framerate: 60,
+        verbose: true
+      });
+
+      let hasStarted = false;
+      let hasStopped = false;
+      let hasSaved = false;
+      let framesCaptured = 0;
+
+      const canvas = document.getElementById("myCanvas");
+
+      init();
+      animate();
+
+      function init() {
+        initScene();
+        initMisc();
+
+        document.body.appendChild(renderer.domElement);
+        window.addEventListener('resize', onWindowResize, false);
+      }
+
+      function initScene() {
+        camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 1, 3000);
+        camera.up = new THREE.Vector3(0, 0, 1);
+        camera.position.set(0, -5, 5);
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        scene.add(new THREE.AmbientLight(0x606060));
+
+        spotLight = new THREE.SpotLight(0xD6F5FF);
+        spotLight.name = 'Spot Light';
+        spotLight.angle = 2.5;
+        spotLight.penumbra = 0.5;
+        spotLight.position.set(-50, 100, 300);
+        spotLight.castShadow = true;
+        spotLight.shadow.camera.near = 10;
+        spotLight.shadow.camera.far = 390;
+        spotLight.intensity = 1;
+        spotLight.shadow.mapSize.width = 1042;
+        spotLight.shadow.mapSize.height = 1042;
+        scene.add(spotLight);
+
+        // Ground
+        var groundgeometry = new THREE.BoxGeometry(10000, 10000.0, 1.0);
+        var groundmaterial = new THREE.MeshPhongMaterial({
+          color: 0x808080,
+          shininess: 0,
+          specular: 0x000000
+        });
+        var groundshadow = new THREE.ShadowMaterial({ opacity: 0 });
+        var ground = new THREE.Mesh(groundgeometry, groundmaterial, groundshadow);
+        ground.scale.multiplyScalar(1);
+        ground.position.set(-100, -35, -1);
+        ground.castShadow = false;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Timing / frame count
+        globalCounter = 0;
+
+        // Expect nodes to be laid out as: [frame0 nodes (3*nNodes), frame1 nodes, ...]
+        // so total frames:
+        nTimes = Math.floor(nodes.length / (3 * nNodes));
+
+        // Basic data validation (optional but helpful)
+        if (tris.length !== 3 * nTri) {
+          console.warn("tris length != 3*nTri. Got:", tris.length, "Expected:", 3 * nTri);
+        }
+        if (nodes.length % (3 * nNodes) !== 0) {
+          console.warn("nodes length is not a multiple of 3*nNodes. nodes.length:", nodes.length, "3*nNodes:", 3 * nNodes);
+        }
+      }
+
+      function initMisc() {
+        renderer = new THREE.WebGLRenderer({
+          canvas: canvas,
+          antialias: true,
+          preserveDrawingBuffer: true
+        });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+        var controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(8, 2, 0);
+        controls.update();
+
+        clock = new THREE.Clock();
+
+        stats = new Stats();
+        document.body.appendChild(stats.dom);
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function animate(now) {
+        requestAnimationFrame(animate);
+
+        render();
+        stats.update();
+
+        if (!hasStarted) {
+          capturer.start();
+          hasStarted = true;
+        }
+
+        if (!hasStopped && globalCounter <= nTimes) {
+          capturer.capture(renderer.domElement);
+          framesCaptured++;
+        }
+
+        if (!hasStopped && globalCounter > nTimes) {
+          hasStopped = true;
+          if (framesCaptured > 0) {
+            capturer.stop();
+            setTimeout(() => {
+              if (!hasSaved) {
+                hasSaved = true;
+                capturer.save();
+              }
+            }, 0);
+          } else {
+            console.warn('[CCapture] No frames captured; not saving.');
+          }
+        }
+      }
+
+      function renderScene() {
+        renderer.render(scene, camera);
+      }
+
+      // Helper: read a node position (x,y,z) for a given frame and node index
+      function getNodeVec3(frameIdx, nodeIdx0Based) {
+        const frameOffset = frameIdx * (3 * nNodes);
+        const base = frameOffset + 3 * nodeIdx0Based;
+        return new THREE.Vector3(nodes[base + 0], nodes[base + 1], nodes[base + 2]);
+      }
+
+      function render() {
+        var delta = clock.getDelta();
+        renderScene();
+
+        if (globalCounter >= nTimes) {
+          globalCounter = globalCounter + 1;
+          return;
+        }
+
+        // Remove previous frame mesh
+        if (globalCounter > 0 && triGroup) {
+          scene.remove(triGroup);
+        }
+
+        triGroup = new THREE.Group();
+
+        var material = new THREE.MeshPhongMaterial({
+          color: 0xFFFFFF,
+          shininess: 40,
+          specular: 0xAAAAAA,
+          flatShading: false
+        });
+
+        // Build triangles for this frame using connectivity
+        for (let t = 0; t < nTri; t++) {
+          const i0 = tris[3 * t + 0] - INDEX_BASE;
+          const i1 = tris[3 * t + 1] - INDEX_BASE;
+          const i2 = tris[3 * t + 2] - INDEX_BASE;
+
+          const v1 = getNodeVec3(globalCounter, i0);
+          const v2 = getNodeVec3(globalCounter, i1);
+          const v3 = getNodeVec3(globalCounter, i2);
+
+          // Front face
+          const geom = new THREE.Geometry();
+          const tri = new THREE.Triangle(v1, v2, v3);
+          const normal = new THREE.Vector3();
+          tri.getNormal(normal);
+          geom.vertices.push(tri.a, tri.b, tri.c);
+          geom.faces.push(new THREE.Face3(0, 1, 2, normal));
+          geom.computeFaceNormals();
+          geom.computeVertexNormals();
+          const mesh = new THREE.Mesh(geom, material);
+          mesh.castShadow = true;
+          mesh.receiveShadow = true;
+          triGroup.add(mesh);
+
+          // Back face (opposite winding)
+          const geom2 = new THREE.Geometry();
+          const tri2 = new THREE.Triangle(v1, v3, v2);
+          const normal2 = new THREE.Vector3();
+          tri2.getNormal(normal2);
+          geom2.vertices.push(tri2.a, tri2.b, tri2.c);
+          geom2.faces.push(new THREE.Face3(0, 1, 2, normal2));
+          geom2.computeFaceNormals();
+          geom2.computeVertexNormals();
+          const mesh2 = new THREE.Mesh(geom2, material);
+          mesh2.castShadow = true;
+          mesh2.receiveShadow = false;
+          triGroup.add(mesh2);
+        }
+
+        scene.add(triGroup);
+        globalCounter = globalCounter + 1;
+      }
+    </script>
+  </body>
+</html>
