@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - ShadowMapViewer example </title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #000;
+				color: #fff;
+				margin: 0px;
+				overflow: hidden;
+			}
+			#info {
+				position: absolute;
+				top: 10px;
+				width: 100%;
+				text-align: center;
+				z-index: 100;
+				display:block;
+			}
+			#info a { color: #f00; font-weight: bold; text-decoration: underline; cursor: pointer }
+		</style>
+	</head>
+	<body>
+		
+		
+		<canvas id="myCanvas" style="font-family: Monospace;
+				background-color: #000; color: #fff; margin: 0px; overflow: hidden;">
+			
+		<script src="../js/build/three.js"></script>
+		<script src="../js/examples/js/controls/OrbitControls.js"></script>
+		<script src="../js/examples/js/shaders/UnpackDepthRGBAShader.js"></script>
+		<script src="../js/examples/js/utils/ShadowMapViewer.js"></script>
+		<script src="../js/examples/js/WebGL.js"></script>
+		<script src="../js/examples/js/libs/stats.min.js"></script>
+
+		<script src="../ccapture.js-master/build/CCapture.all.min.js"></script>
+
+		<!-- <script src="rodData.js"></script> -->
+		 <!-- <script src="rodData_centerline.js"></script> -->
+		  <script src="rodData_gd_centerline.js"></script>
+
+
+		<script>
+
+			var camera, scene, renderer, clock, stats;
+			var dirLight, spotLight;
+			var cube;
+			var rod, nodesRod;
+			var rodGroup;
+			var fixedBlock;
+			var gripperGroup;
+			var nNodes, nTimes, rodRadius, sphereRadius;
+			var globalCounter = 0;
+			var imgCounter = 1;
+			var renderNodes = 200;
+			var viewCenter = new THREE.Vector3( -5, 0, 0 );
+			var showRobotGripper = true;
+
+			// Create a capturer that exports PNG images in a TAR file
+			var capturer = new CCapture( { format: 'png' } );
+			var canvas = document.getElementById("myCanvas");
+
+			init();
+			animate();
+
+
+			function CustomSinCurve( scale ) {
+				THREE.Curve.call( this );
+				this.scale = ( scale === undefined ) ? 1 : scale;
+			}
+
+			function init() {
+
+				initScene();
+				initMisc();
+
+				document.body.appendChild( renderer.domElement );
+				window.addEventListener( 'resize', onWindowResize, false );
+
+
+				var i;
+				nTimes = nodesRod.length / (5 * nNodes);				
+			}
+
+			function initScene() {
+
+				camera = new THREE.PerspectiveCamera( 20, window.innerWidth / window.innerHeight, 1, 1000 );
+				// Change the following line to change the "boundary" of the scene (important line)	
+				camera.position.set( 0, 70, 20 );
+
+				// camera.position.set(0, 0, 50);
+                camera.up = new THREE.Vector3( 0, 0, 1 );
+
+				camera.lookAt(viewCenter);
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xffffff );
+
+				// Lights
+
+				spotLight = new THREE.SpotLight( 0x9090b0 );
+				spotLight.name = 'Spot Light';
+				spotLight.angle = 0.9;
+				spotLight.penumbra = 0.5;
+				// // spotLight.position.set( 40, 100, -90 );
+				spotLight.position.set(50, 50, 200);
+				// spotLight.position.set(0, 50, 20);
+				spotLight.castShadow = true;
+				spotLight.shadow.camera.near = 50;
+				spotLight.shadow.camera.far = 350;
+				spotLight.shadow.mapSize.width = 10240;
+				spotLight.shadow.mapSize.height = 10240;
+				scene.add( spotLight );
+
+				var light = new THREE.AmbientLight( 0x808080 ); // soft white light
+				scene.add( light );
+
+				var blockGeometry = new THREE.BoxGeometry( 1.0, 1.2, 1.2 );
+				var blockMaterial = new THREE.MeshPhongMaterial( {
+					color: 0x808080,
+					shininess: 40,
+					specular: 0x222222
+				} );
+				fixedBlock = new THREE.Mesh( blockGeometry, blockMaterial );
+				fixedBlock.position.set( 0.5, 0, 0 );
+				fixedBlock.castShadow = true;
+				fixedBlock.receiveShadow = true;
+				scene.add( fixedBlock );
+
+				if ( showRobotGripper ) {
+					createRobotGripper();
+				}
+
+			}
+
+			function createRobotGripper() {
+
+				gripperGroup = new THREE.Group();
+
+				var palmMaterial = new THREE.MeshPhongMaterial( {
+					color: 0x7f1725,
+					shininess: 80,
+					specular: 0x333333
+				} );
+				var fingerMaterial = new THREE.MeshPhongMaterial( {
+					color: 0x9a2432,
+					shininess: 70,
+					specular: 0x333333
+				} );
+
+				var palm = new THREE.Mesh( new THREE.BoxGeometry( 1.3, 1.4, 0.6 ), palmMaterial );
+				palm.position.set( -0.78, 0, 0 );
+				gripperGroup.add( palm );
+
+				var upperFinger = new THREE.Mesh( new THREE.BoxGeometry( 1.15, 0.3, 0.38 ), fingerMaterial );
+				upperFinger.position.set( 0.12, 0.52, 0 );
+				gripperGroup.add( upperFinger );
+
+				var lowerFinger = new THREE.Mesh( new THREE.BoxGeometry( 1.15, 0.3, 0.38 ), fingerMaterial );
+				lowerFinger.position.set( 0.12, -0.52, 0 );
+				gripperGroup.add( lowerFinger );
+
+				var wrist = new THREE.Mesh( new THREE.CylinderGeometry( 0.3, 0.3, 1.35, 24 ), palmMaterial );
+				wrist.rotation.z = Math.PI / 2;
+				wrist.position.set( -1.95, 0, 0 );
+				gripperGroup.add( wrist );
+
+				gripperGroup.traverse( function ( child ) {
+					if ( child.isMesh ) {
+						child.castShadow = true;
+						child.receiveShadow = true;
+					}
+				} );
+
+				scene.add( gripperGroup );
+
+			}
+
+			function initMisc() {
+
+				renderer = new THREE.WebGLRenderer({
+							canvas: canvas, 
+							antialias: true,
+                    		preserveDrawingBuffer: true
+                	});
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				// renderer.shadowMap.type = THREE.BasicShadowMap;
+				renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+				// Mouse control
+				var controls = new THREE.OrbitControls( camera, renderer.domElement );
+				controls.target.copy( viewCenter );
+				controls.update();
+
+				clock = new THREE.Clock();
+
+				stats = new Stats();
+				document.body.appendChild( stats.dom );
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+
+			function animate() {
+
+				requestAnimationFrame( animate );				
+				
+				if (globalCounter == 1)
+				{
+					capturer.start( canvas );
+				}
+				
+				if (globalCounter>0 && globalCounter < nTimes)
+				{
+					capturer.capture( canvas );
+					// console.log(globalCounter);
+					// console.log(nTimes);
+					// takeScreenshot(globalCounter);
+				}				
+				render();
+				stats.update();
+				
+				if (globalCounter == nTimes-1)
+				{
+					capturer.stop();
+					capturer.save();
+				}		
+			}
+
+			function takeScreenshot( imgNumber ) {
+				//
+				// Make sure that pop-ups are allowed from this site
+				//
+				
+			    // For screenshots to work with WebGL renderer, preserveDrawingBuffer should be set to true.
+			    // open in new window like this
+					var w = window.open('', '');
+	    			w.document.title = "Screenshot";
+	    			//w.document.body.style.backgroundColor = "red";
+	    			var img = new Image();
+	    			img.src = renderer.domElement.toDataURL();
+	    			w.document.body.appendChild(img);
+
+			    	// download file like this.
+			    	var a = document.createElement('a');
+				a.href = renderer.domElement.toDataURL().replace("image/png", "image/octet-stream");
+			    a.download = imgCounter.toString().padStart(10, "0") + '.png'
+				a.click();
+				
+				imgCounter = imgCounter + 1;
+				
+				w.close();
+			}
+
+			function renderScene() {
+
+				renderer.render( scene, camera );
+
+			}
+
+			function render() {
+                const delta = clock.getDelta();
+                renderScene();
+
+                if (globalCounter >= nTimes) {
+                    return;
+                }
+
+                if (globalCounter <= nTimes-1)
+                    scene.remove(rodGroup);
+
+                CustomSinCurve.prototype = Object.create( THREE.Curve.prototype );
+                CustomSinCurve.prototype.constructor = CustomSinCurve;
+
+                function getAnchoredNodePosition( nodeIndex, baseNum ) {
+                    var rightEndIndex = nNodes - 1;
+                    var rightEndX = nodesRod[5 * rightEndIndex + 2 + baseNum];
+                    var rightEndY = nodesRod[5 * rightEndIndex + 3 + baseNum];
+                    var rightEndZ = nodesRod[5 * rightEndIndex + 4 + baseNum];
+
+                    return new THREE.Vector3(
+                        nodesRod[5 * nodeIndex + 2 + baseNum] - rightEndX,
+                        nodesRod[5 * nodeIndex + 3 + baseNum] - rightEndY,
+                        nodesRod[5 * nodeIndex + 4 + baseNum] - rightEndZ
+                    );
+                }
+
+                function updateRobotGripper( baseNum ) {
+                    if ( !showRobotGripper || !gripperGroup ) {
+                        return;
+                    }
+
+	                    var freeEnd = getAnchoredNodePosition( 0, baseNum );
+	                    var nextNode = getAnchoredNodePosition( 1, baseNum );
+	                    var tangent = freeEnd.clone().sub( nextNode ).normalize();
+	                    var angle = Math.atan2( tangent.y, tangent.x ) + Math.PI;
+
+	                    gripperGroup.position.copy( freeEnd );
+                    gripperGroup.rotation.set( 0, 0, angle );
+                }
+
+                CustomSinCurve.prototype.getPoint = function ( t ) {
+                    var baseNum = globalCounter * 5 * nNodes;
+                    if (baseNum > nodesRod.length) {
+                        return new THREE.Vector3(0,0,0);
+                    }
+
+                    var indRight = t * (nNodes-1);
+                    var indf = Math.floor( indRight );
+                    var indc = Math.ceil( indRight );
+                    var df = indRight - indf;
+                    var dc = - indRight + indc;
+                    if (df < 1/(100*renderNodes)) {
+                        df = 1.0;
+                        dc = 0.0;
+                    }
+                    var pf = getAnchoredNodePosition( indf, baseNum );
+                    var pc = getAnchoredNodePosition( indc, baseNum );
+
+                    return new THREE.Vector3(
+                        pf.x * dc + pc.x * df,
+                        pf.y * dc + pc.y * df,
+                        pf.z * dc + pc.z * df
+                    ).multiplyScalar( this.scale );
+                };
+
+                rodGroup = new THREE.Group();
+                updateRobotGripper( globalCounter * 5 * nNodes );
+
+                var nRodsThisStep = 1;
+                var addRods;
+                do {
+                    var cTime = nodesRod[globalCounter * 5 * nNodes];
+                    var nextTime;
+                    var nextTimeInd = (globalCounter + nRodsThisStep) * 5 * nNodes;
+                    addRods = 0;
+                    if (nextTimeInd < nodesRod.length) {
+                        nextTime = nodesRod[nextTimeInd];
+                        if (cTime == nextTime) {
+                            nRodsThisStep++;
+                            addRods = 1;
+                        }
+                    }
+                } while (addRods == 1);
+
+                for (let i = 0; i < nRodsThisStep; i++) {
+                    var path = new CustomSinCurve( 1 );
+                    var geometry = new THREE.TubeGeometry( path, 200, rodRadius, 12, false );
+
+	                    let material;
+	                    if (i === 0) {
+	                        material = new THREE.MeshPhongMaterial({
+	                            color: 0xB7832F,
+	                            shininess: 150,
+	                            specular: 0x222222
+	                        });
+                    } else if (i === 1) {
+                        material = new THREE.MeshPhongMaterial({
+                            color: 0xff0000,
+                            shininess: 150,
+                            specular: 0x222222
+                        });
+                    }
+
+                    rod = new THREE.Mesh( geometry, material );
+                    rod.castShadow = true;
+                    rod.receiveShadow = true;
+                    rodGroup.add( rod );
+
+	                    let sphereColor = (i === 0) ? new THREE.Color(0xB7832F).multiplyScalar(0.6) : new THREE.Color(0xff0000).multiplyScalar(0.6);
+                    let sphereMaterial = new THREE.MeshPhongMaterial({
+                        color: sphereColor,
+                        shininess: 30,
+                        specular: 0x111111
+                    });
+                    let sphereGeom = new THREE.SphereGeometry( rodRadius * 2, 32, 32 );
+
+                    let baseNum = (globalCounter + i) * 5 * nNodes;
+
+                    for (let j = 0; j < nNodes; j++) {
+                        let nodePosition = getAnchoredNodePosition( j, baseNum );
+
+                        let sphere = new THREE.Mesh(sphereGeom, sphereMaterial);
+                        sphere.position.copy(nodePosition);
+                        sphere.castShadow = true;
+                        sphere.receiveShadow = true;
+
+                        rodGroup.add(sphere);
+                    }
+
+                    globalCounter++;
+                }
+
+                scene.add( rodGroup );
+            }
+
+
+		</script>
+		</div>
+	</body>
+</html>

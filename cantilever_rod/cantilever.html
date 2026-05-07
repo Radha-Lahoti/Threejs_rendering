@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Three.js Rod Trajectory Visualization</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #ffffff;
+            font-family: monospace;
+        }
+
+        #myCanvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+<canvas id="myCanvas"></canvas>
+
+<script src="../js/build/three.js"></script>
+<script src="../js/examples/js/controls/OrbitControls.js"></script>
+<script src="../js/examples/js/libs/stats.min.js"></script>
+<script src="rodData_cantilever.js"></script>
+
+<script>
+    let camera, scene, renderer, stats, controls;
+    let spotLight;
+    let rodRadius = 0.02;      // set this as needed
+    let renderNodes = 200;    // tube resolution along length
+
+    // These are expected to come from rodData_cantilever.js
+    // Make sure that file defines:
+    //   nNodes
+    //   nodesRod
+    // where nodesRod layout is assumed as:
+    // [time, ?, x, y, z, time, ?, x, y, z, ...] for all nodes and all time steps
+
+    let nTimes = 0;
+
+    init();
+    buildFullTrajectory();
+    animate();
+
+    function init() {
+        initScene();
+        initRenderer();
+        initControls();
+        initStats();
+
+        window.addEventListener("resize", onWindowResize, false);
+
+        if (typeof nNodes === "undefined" || typeof nodesRod === "undefined") {
+            console.error("nNodes or nodesRod is not defined. Check rodData_cantilever.js");
+            return;
+        }
+
+        nTimes = Math.floor(nodesRod.length / (5 * nNodes));
+        console.log("nNodes =", nNodes);
+        console.log("nTimes =", nTimes);
+    }
+
+    function initScene() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        camera = new THREE.PerspectiveCamera(
+            20,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            2000
+        );
+        camera.position.set(0, 10, 10);
+        camera.up = new THREE.Vector3(0, 0, 1);
+        camera.lookAt(0, 0, 0);
+
+        // Ambient light
+        const ambientLight = new THREE.AmbientLight(0x808080);
+        scene.add(ambientLight);
+
+        // Spotlight
+        spotLight = new THREE.SpotLight(0x9090b0, 1.0);
+        spotLight.name = "Spot Light";
+        spotLight.angle = 0.9;
+        spotLight.penumbra = 0.5;
+        spotLight.position.set(50, 50, 200);
+        spotLight.castShadow = true;
+        spotLight.shadow.camera.near = 50;
+        spotLight.shadow.camera.far = 350;
+        spotLight.shadow.mapSize.width = 4096;
+        spotLight.shadow.mapSize.height = 4096;
+        scene.add(spotLight);
+
+        // Ground
+        const groundGeometry = new THREE.BoxGeometry(500, 500, 1.0);
+        const groundMaterial = new THREE.MeshPhongMaterial({
+            color: 0xffffff,
+            shininess: 0,
+            specular: 0x000000
+        });
+
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.position.set(-100, -35, -6);
+        ground.castShadow = false;
+        ground.receiveShadow = true;
+        scene.add(ground);
+    }
+
+    function initRenderer() {
+        const canvas = document.getElementById("myCanvas");
+
+        renderer = new THREE.WebGLRenderer({
+            canvas: canvas,
+            antialias: true,
+            preserveDrawingBuffer: true
+        });
+
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    }
+
+    function initControls() {
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 2, 0);
+        controls.update();
+    }
+
+    function initStats() {
+        stats = new Stats();
+        document.body.appendChild(stats.dom);
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function getInterpolatedPoint(timeIndex, t) {
+        const baseNum = timeIndex * 5 * nNodes;
+
+        if (baseNum >= nodesRod.length) {
+            return new THREE.Vector3(0, 0, 0);
+        }
+
+        const indRight = t * (nNodes - 1);
+        const indf = Math.floor(indRight);
+        const indc = Math.ceil(indRight);
+
+        let df = indRight - indf;
+        let dc = indc - indRight;
+
+        // Handle exact-node case robustly
+        if (Math.abs(df) < 1 / (100 * renderNodes)) {
+            df = 1.0;
+            dc = 0.0;
+        }
+
+        const tx = nodesRod[baseNum + 5 * indf + 2] * dc + nodesRod[baseNum + 5 * indc + 2] * df;
+        const ty = nodesRod[baseNum + 5 * indf + 3] * dc + nodesRod[baseNum + 5 * indc + 3] * df;
+        const tz = nodesRod[baseNum + 5 * indf + 4] * dc + nodesRod[baseNum + 5 * indc + 4] * df;
+
+        return new THREE.Vector3(tx, ty, tz);
+    }
+
+    function createRodCurve(timeIndex) {
+        class RodCurve extends THREE.Curve {
+            constructor(scale = 1) {
+                super();
+                this.scale = scale;
+            }
+
+            getPoint(t) {
+                return getInterpolatedPoint(timeIndex, t).multiplyScalar(this.scale);
+            }
+        }
+
+        return new RodCurve(1);
+    }
+
+    function getRodColor(timeIndex, totalTimes) {
+        const tNorm = totalTimes > 1 ? timeIndex / (totalTimes - 1) : 1.0;
+
+        // Early time = yellow, late time = black
+		// both start and end color maroon
+        const startColor = new THREE.Color(0xffff00); // yellow
+        const endColor = new THREE.Color(0x800000);
+
+        return startColor.clone().lerp(endColor, tNorm);
+    }
+
+    function buildFullTrajectory() {
+        if (nTimes <= 0) return;
+
+        const trajectoryGroup = new THREE.Group();
+
+        for (let timeIndex = 0; timeIndex < nTimes; timeIndex++) {
+            const path = createRodCurve(timeIndex);
+
+            const geometry = new THREE.TubeGeometry(
+                path,
+                renderNodes,
+                rodRadius,
+                12,
+                false
+            );
+
+            const material = new THREE.MeshPhongMaterial({
+                color: getRodColor(timeIndex, nTimes),
+                shininess: 150,
+                specular: 0x222222
+            });
+
+            const rodMesh = new THREE.Mesh(geometry, material);
+            rodMesh.castShadow = true;
+            rodMesh.receiveShadow = true;
+
+            trajectoryGroup.add(rodMesh);
+        }
+
+        scene.add(trajectoryGroup);
+    }
+
+    function animate() {
+        requestAnimationFrame(animate);
+        controls.update();
+        renderer.render(scene, camera);
+        stats.update();
+    }
+</script>
+
+</body>
+</html>
